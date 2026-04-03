@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    --background: 1 0 0;
+    --foreground: 0.145 0 0;
+    --card: 1 0 0;
+    --card-foreground: 0.145 0 0;
+    --popover: 1 0 0;
+    --popover-foreground: 0.145 0 0;
+    --primary: 0.205 0 0;
+    --primary-foreground: 0.985 0 0;
+    --secondary: 0.97 0 0;
+    --secondary-foreground: 0.205 0 0;
+    --muted: 0.97 0 0;
+    --muted-foreground: 0.556 0 0;
+    --accent: 0.97 0 0;
+    --accent-foreground: 0.205 0 0;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+    --border: 0.922 0 0;
+    --input: 0.922 0 0;
+    --ring: 0.708 0 0;
+    --chart-1: 0.646 0.222 41.116;
+    --chart-2: 0.6 0.118 184.704;
+    --chart-3: 0.398 0.07 227.392;
+    --chart-4: 0.828 0.189 84.429;
+    --chart-5: 0.769 0.188 70.08;
+    --sidebar: 0.985 0 0;
+    --sidebar-foreground: 0.145 0 0;
+    --sidebar-primary: 0.205 0 0;
+    --sidebar-primary-foreground: 0.985 0 0;
+    --sidebar-accent: 0.97 0 0;
+    --sidebar-accent-foreground: 0.205 0 0;
+    --sidebar-border: 0.922 0 0;
+    --sidebar-ring: 0.708 0 0;
+
+    /* Dashboard custom tokens */
+    --din-bg: 0.22 0.022 218;
+    --din-surface: 0.28 0.025 215;
+    --din-surface-alt: 0.32 0.025 215;
+    --din-border: 0.36 0.025 215;
+    --din-text: 0.94 0.01 220;
+    --din-muted: 0.73 0.02 220;
+    --din-teal: 0.73 0.12 178;
+    --din-orange: 0.72 0.18 55;
+    --din-green: 0.7 0.18 155;
+    --din-red: 0.65 0.22 25;
+
+    /* Customer ordering tokens — warm food-app palette */
+    --cust-bg: 0.97 0.01 60;
+    --cust-text: 0.2 0.01 40;
+    --cust-muted: 0.55 0.02 50;
+    --cust-primary: 0.65 0.19 40;
+    --cust-primary-dark: 0.55 0.19 40;
+  }
+
+  .dark {
+    --background: 0.22 0.022 218;
+    --foreground: 0.94 0.01 220;
+    --card: 0.28 0.025 215;
+    --card-foreground: 0.94 0.01 220;
+    --popover: 0.28 0.025 215;
+    --popover-foreground: 0.94 0.01 220;
+    --primary: 0.73 0.12 178;
+    --primary-foreground: 0.18 0.02 218;
+    --secondary: 0.32 0.025 215;
+    --secondary-foreground: 0.94 0.01 220;
+    --muted: 0.32 0.025 215;
+    --muted-foreground: 0.73 0.02 220;
+    --accent: 0.72 0.18 55;
+    --accent-foreground: 0.18 0.02 218;
+    --destructive: 0.65 0.22 25;
+    --destructive-foreground: 0.99 0 0;
+    --border: 0.36 0.025 215;
+    --input: 0.36 0.025 215;
+    --ring: 0.73 0.12 178;
+    --chart-1: 0.73 0.12 178;
+    --chart-2: 0.72 0.18 55;
+    --chart-3: 0.7 0.18 155;
+    --chart-4: 0.65 0.22 25;
+    --chart-5: 0.488 0.243 264.376;
+    --sidebar: 0.28 0.025 215;
+    --sidebar-foreground: 0.94 0.01 220;
+    --sidebar-primary: 0.73 0.12 178;
+    --sidebar-primary-foreground: 0.18 0.02 218;
+    --sidebar-accent: 0.32 0.025 215;
+    --sidebar-accent-foreground: 0.94 0.01 220;
+    --sidebar-border: 0.36 0.025 215;
+    --sidebar-ring: 0.73 0.12 178;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+  }
+
+  /* Customer page resets dark mode forcing */
+  .cust-page {
+    color-scheme: light;
+  }
+}

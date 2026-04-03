@@ -1,0 +1,10 @@
+{
+  "name": "Dinki Pos",
+  "short_name": "DinkiPos",
+  "description": "Dinki Dine Drive-in & Dine-in POS System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f766e",
+  "orientation": "any"
+}
