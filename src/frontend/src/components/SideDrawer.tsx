@@ -7,13 +7,14 @@ import {
   ClipboardList,
   FileText,
   LayoutDashboard,
+  QrCode,
   Receipt,
   Settings,
   ShoppingBag,
   Users,
   X,
+  XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 
 export type AppView =
   | "dashboard"
@@ -22,7 +23,10 @@ export type AppView =
   | "invoiceList"
   | "userManagement"
   | "dayEndReport"
-  | "settings";
+  | "settings"
+  | "reports"
+  | "cancelledOrders"
+  | "qrcodes";
 
 interface NavItem {
   label: string;
@@ -55,8 +59,9 @@ export function SideDrawer({
   };
 
   const kitchenSoon = (n: number) => {
-    toast(`Kitchen ${n}: Feature coming soon`);
+    // Kitchen screens are future features
     onClose();
+    alert(`Kitchen ${n}: Feature coming soon`);
   };
 
   const navItems: NavItem[] = [
@@ -81,6 +86,12 @@ export function SideDrawer({
         onOpenNewOrder("driveIn");
         onClose();
       },
+    },
+    {
+      label: "QR Codes & Links",
+      icon: <QrCode className="w-4 h-4" />,
+      action: () => navigate("qrcodes"),
+      view: "qrcodes",
     },
     {
       label: "Kitchen 1",
@@ -136,6 +147,12 @@ export function SideDrawer({
       view: "orderList",
     },
     {
+      label: "Cancelled Orders",
+      icon: <XCircle className="w-4 h-4" />,
+      action: () => navigate("cancelledOrders"),
+      view: "cancelledOrders",
+    },
+    {
       label: "Invoice List",
       icon: <Receipt className="w-4 h-4" />,
       action: () => navigate("invoiceList"),
@@ -144,10 +161,8 @@ export function SideDrawer({
     {
       label: "Reports",
       icon: <BarChart3 className="w-4 h-4" />,
-      action: () => {
-        toast("Reports: Feature coming soon");
-        onClose();
-      },
+      action: () => navigate("reports"),
+      view: "reports",
     },
     {
       label: "User Management",

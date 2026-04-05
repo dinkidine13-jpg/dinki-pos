@@ -115,8 +115,10 @@ export interface OrderInput {
     id: bigint;
     status: OrderStatus;
     vehicleInfo: VehicleInfo;
+    discountType: string;
     customerMobile: string;
     timestamp: Timestamp;
+    discount: bigint;
     items: Array<OrderItem>;
 }
 export interface OrderItem {
@@ -128,12 +130,16 @@ export interface Order {
     id: bigint;
     status: OrderStatus;
     vehicleInfo: VehicleInfo;
+    cancellationReason: string;
+    discountType: string;
     customerMobile: string;
     timestamp: Timestamp;
+    discount: bigint;
     items: Array<OrderItem>;
 }
 export enum OrderStatus {
     preparing = "preparing",
+    cancelled = "cancelled",
     pending = "pending",
     fulfilled = "fulfilled",
     ready = "ready"
@@ -143,6 +149,7 @@ export interface backendInterface {
     acknowledgeNotification(notificationId: bigint): Promise<void>;
     addItemsToOrder(orderId: bigint, newItems: Array<OrderItem>, packingCharge: bigint, deliveryCharge: bigint): Promise<void>;
     addMenuItem(name: string, category: string, price: bigint, printerNumber: bigint): Promise<bigint>;
+    cancelOrder(orderId: bigint, reason: string): Promise<void>;
     clearAllData(): Promise<void>;
     clearAllNotifications(): Promise<void>;
     clearAllOrders(): Promise<void>;
@@ -158,6 +165,8 @@ export interface backendInterface {
     placeOrder(order: OrderInput): Promise<bigint>;
     resetMenuToDefaults(): Promise<void>;
     updateMenuItem(id: bigint, name: string, category: string, price: bigint, printerNumber: bigint, available: boolean): Promise<void>;
+    updateOrderDiscount(orderId: bigint, discount: bigint, discountType: string): Promise<void>;
+    updateOrderItems(orderId: bigint, items: Array<OrderItem>, packingCharge: bigint, deliveryCharge: bigint): Promise<void>;
     updateOrderStatus(orderId: bigint, status: OrderStatus): Promise<void>;
 }
 import type { Order as _Order, OrderInput as _OrderInput, OrderItem as _OrderItem, OrderStatus as _OrderStatus, Timestamp as _Timestamp, VehicleInfo as _VehicleInfo } from "./declarations/backend.did.d.ts";
@@ -216,6 +225,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.addMenuItem(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
+    async cancelOrder(arg0: bigint, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.cancelOrder(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.cancelOrder(arg0, arg1);
             return result;
         }
     }
@@ -429,6 +452,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async updateOrderDiscount(arg0: bigint, arg1: bigint, arg2: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateOrderDiscount(arg0, arg1, arg2);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateOrderDiscount(arg0, arg1, arg2);
+            return result;
+        }
+    }
+    async updateOrderItems(arg0: bigint, arg1: Array<OrderItem>, arg2: bigint, arg3: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateOrderItems(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateOrderItems(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
     async updateOrderStatus(arg0: bigint, arg1: OrderStatus): Promise<void> {
         if (this.processError) {
             try {
@@ -454,28 +505,39 @@ function from_candid_record_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint
     id: bigint;
     status: _OrderStatus;
     vehicleInfo: _VehicleInfo;
+    cancellationReason: string;
+    discountType: string;
     customerMobile: string;
     timestamp: _Timestamp;
+    discount: bigint;
     items: Array<_OrderItem>;
 }): {
     id: bigint;
     status: OrderStatus;
     vehicleInfo: VehicleInfo;
+    cancellationReason: string;
+    discountType: string;
     customerMobile: string;
     timestamp: Timestamp;
+    discount: bigint;
     items: Array<OrderItem>;
 } {
     return {
         id: value.id,
         status: from_candid_OrderStatus_n4(_uploadFile, _downloadFile, value.status),
         vehicleInfo: value.vehicleInfo,
+        cancellationReason: value.cancellationReason,
+        discountType: value.discountType,
         customerMobile: value.customerMobile,
         timestamp: value.timestamp,
+        discount: value.discount,
         items: value.items
     };
 }
 function from_candid_variant_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     preparing: null;
+} | {
+    cancelled: null;
 } | {
     pending: null;
 } | {
@@ -483,7 +545,7 @@ function from_candid_variant_n5(_uploadFile: (file: ExternalBlob) => Promise<Uin
 } | {
     ready: null;
 }): OrderStatus {
-    return "preparing" in value ? OrderStatus.preparing : "pending" in value ? OrderStatus.pending : "fulfilled" in value ? OrderStatus.fulfilled : "ready" in value ? OrderStatus.ready : value;
+    return "preparing" in value ? OrderStatus.preparing : "cancelled" in value ? OrderStatus.cancelled : "pending" in value ? OrderStatus.pending : "fulfilled" in value ? OrderStatus.fulfilled : "ready" in value ? OrderStatus.ready : value;
 }
 function from_candid_vec_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Order>): Array<Order> {
     return value.map((x)=>from_candid_Order_n2(_uploadFile, _downloadFile, x));
@@ -498,28 +560,36 @@ function to_candid_record_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
     id: bigint;
     status: OrderStatus;
     vehicleInfo: VehicleInfo;
+    discountType: string;
     customerMobile: string;
     timestamp: Timestamp;
+    discount: bigint;
     items: Array<OrderItem>;
 }): {
     id: bigint;
     status: _OrderStatus;
     vehicleInfo: _VehicleInfo;
+    discountType: string;
     customerMobile: string;
     timestamp: _Timestamp;
+    discount: bigint;
     items: Array<_OrderItem>;
 } {
     return {
         id: value.id,
         status: to_candid_OrderStatus_n8(_uploadFile, _downloadFile, value.status),
         vehicleInfo: value.vehicleInfo,
+        discountType: value.discountType,
         customerMobile: value.customerMobile,
         timestamp: value.timestamp,
+        discount: value.discount,
         items: value.items
     };
 }
 function to_candid_variant_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: OrderStatus): {
     preparing: null;
+} | {
+    cancelled: null;
 } | {
     pending: null;
 } | {
@@ -529,6 +599,8 @@ function to_candid_variant_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8
 } {
     return value == OrderStatus.preparing ? {
         preparing: null
+    } : value == OrderStatus.cancelled ? {
+        cancelled: null
     } : value == OrderStatus.pending ? {
         pending: null
     } : value == OrderStatus.fulfilled ? {

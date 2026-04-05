@@ -218,6 +218,8 @@ export function CustomerOrder({ mode = "customer" }: CustomerOrderProps) {
         items: orderItems,
         timestamp: BigInt(Date.now() * 1_000_000),
         status: OrderStatus.pending,
+        discount: 0n,
+        discountType: "flat",
       };
       await actor.placeOrder(order);
       setScreen("confirm");

@@ -29,16 +29,21 @@ export interface Order {
   'id' : bigint,
   'status' : OrderStatus,
   'vehicleInfo' : VehicleInfo,
+  'cancellationReason' : string,
+  'discountType' : string,
   'customerMobile' : string,
   'timestamp' : Timestamp,
+  'discount' : bigint,
   'items' : Array<OrderItem>,
 }
 export interface OrderInput {
   'id' : bigint,
   'status' : OrderStatus,
   'vehicleInfo' : VehicleInfo,
+  'discountType' : string,
   'customerMobile' : string,
   'timestamp' : Timestamp,
+  'discount' : bigint,
   'items' : Array<OrderItem>,
 }
 export interface OrderItem {
@@ -47,6 +52,7 @@ export interface OrderItem {
   'price' : bigint,
 }
 export type OrderStatus = { 'preparing' : null } |
+  { 'cancelled' : null } |
   { 'pending' : null } |
   { 'fulfilled' : null } |
   { 'ready' : null };
@@ -65,6 +71,7 @@ export interface _SERVICE {
     undefined
   >,
   'addMenuItem' : ActorMethod<[string, string, bigint, bigint], bigint>,
+  'cancelOrder' : ActorMethod<[bigint, string], undefined>,
   'clearAllData' : ActorMethod<[], undefined>,
   'clearAllNotifications' : ActorMethod<[], undefined>,
   'clearAllOrders' : ActorMethod<[], undefined>,
@@ -81,6 +88,11 @@ export interface _SERVICE {
   'resetMenuToDefaults' : ActorMethod<[], undefined>,
   'updateMenuItem' : ActorMethod<
     [bigint, string, string, bigint, bigint, boolean],
+    undefined
+  >,
+  'updateOrderDiscount' : ActorMethod<[bigint, bigint, string], undefined>,
+  'updateOrderItems' : ActorMethod<
+    [bigint, Array<OrderItem>, bigint, bigint],
     undefined
   >,
   'updateOrderStatus' : ActorMethod<[bigint, OrderStatus], undefined>,

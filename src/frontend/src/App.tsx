@@ -25,7 +25,9 @@ import type { Notification, Order, OrderInput, OrderItem } from "./backend";
 import { OrderStatus } from "./backend";
 import { AdminPinGate } from "./components/AdminPinGate";
 import { CustomerOrder } from "./components/CustomerOrder";
+import { CustomerOrderUnified } from "./components/CustomerOrderUnified";
 import { DayEndReport } from "./components/DayEndReport";
+import { DriveInMenuDisplay } from "./components/DriveInMenuDisplay";
 import { InvoiceListScreen } from "./components/InvoiceListScreen";
 import { KpiCard } from "./components/KpiCard";
 import { MenuAdmin } from "./components/MenuAdmin";
@@ -33,6 +35,8 @@ import { NewOrderModal } from "./components/NewOrderModal";
 import { NotificationItem } from "./components/NotificationItem";
 import { OrderCard } from "./components/OrderCard";
 import { OrderListScreen } from "./components/OrderListScreen";
+import { QRCodesPanel } from "./components/QRCodesPanel";
+import { ReportsScreen } from "./components/ReportsScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
 import type { AppView } from "./components/SideDrawer";
 import { SideDrawer } from "./components/SideDrawer";
@@ -47,6 +51,10 @@ const isCustomerMode =
   new URLSearchParams(window.location.search).get("mode") === "customer";
 const isDriveInMode =
   new URLSearchParams(window.location.search).get("mode") === "drivein";
+const isMenuOnlyMode =
+  new URLSearchParams(window.location.search).get("mode") === "menuonly";
+const isUnifiedOrderMode =
+  new URLSearchParams(window.location.search).get("mode") === "order";
 
 export default function App() {
   if (isCustomerMode) {
@@ -54,6 +62,12 @@ export default function App() {
   }
   if (isDriveInMode) {
     return <CustomerOrder mode="drivein" />;
+  }
+  if (isMenuOnlyMode) {
+    return <DriveInMenuDisplay />;
+  }
+  if (isUnifiedOrderMode) {
+    return <CustomerOrderUnified />;
   }
   return (
     <AdminPinGate>
@@ -144,6 +158,8 @@ function StaffDashboard() {
 
   const seenNotifIds = useRef<Set<string>>(new Set());
   const notificationsRef = useRef<Notification[]>([]);
+  // Track locally closed/cancelled orders so polling never re-shows them
+  const closedOrderIds = useRef<Set<string>>(new Set());
   const unacknowledgedCount = notifications.filter(
     (n) => !n.acknowledged,
   ).length;
@@ -168,7 +184,12 @@ function StaffDashboard() {
 
       setAllOrders(sortedAll);
       setLiveOrders(
-        sortedAll.filter((o) => o.status !== OrderStatus.fulfilled),
+        sortedAll.filter(
+          (o) =>
+            o.status !== OrderStatus.fulfilled &&
+            o.status !== OrderStatus.cancelled &&
+            !closedOrderIds.current.has(o.id.toString()),
+        ),
       );
 
       const newNotifs = fetchedNotifs.filter(
@@ -211,6 +232,7 @@ function StaffDashboard() {
 
       // Optimistic update on liveOrders: remove fulfilled orders immediately
       if (status === OrderStatus.fulfilled) {
+        closedOrderIds.current.add(orderId.toString());
         setLiveOrders((prev) => prev.filter((o) => o.id !== orderId));
       } else {
         setLiveOrders((prev) =>
@@ -298,6 +320,31 @@ function StaffDashboard() {
     );
   };
 
+  const handleCancelOrder = async (orderId: bigint, reason: string) => {
+    closedOrderIds.current.add(orderId.toString());
+    if (!actor) return;
+    await actor.cancelOrder(orderId, reason);
+    await fetchData();
+    toast.success(
+      `Order #${Number(orderId).toString().padStart(4, "0")} cancelled`,
+    );
+  };
+
+  const handleEditOrder = async (
+    orderId: bigint,
+    items: OrderItem[],
+    packingCharge: bigint,
+    deliveryCharge: bigint,
+    discount: bigint,
+    discountType: string,
+  ) => {
+    if (!actor) return;
+    await actor.updateOrderItems(orderId, items, packingCharge, deliveryCharge);
+    await actor.updateOrderDiscount(orderId, discount, discountType);
+    await fetchData();
+    toast.success("Invoice updated");
+  };
+
   const toggleMute = () => {
     setIsMuted((prev) => {
       const next = !prev;
@@ -314,7 +361,10 @@ function StaffDashboard() {
 
   // Main page: show only live (non-fulfilled) orders, filtered by status pill
   const filteredOrders = liveOrders.filter(
-    (o) => filter === "all" || o.status === filter,
+    (o) =>
+      o.status !== OrderStatus.fulfilled &&
+      o.status !== OrderStatus.cancelled &&
+      (filter === "all" || o.status === filter),
   );
 
   // Table grid view: only open/active orders
@@ -418,6 +468,15 @@ function StaffDashboard() {
                   order={order}
                   onUpdateStatus={handleUpdateStatus}
                   onAddItems={handleAddItems}
+                  onCancelOrder={handleCancelOrder}
+                  onApplyDiscount={async (orderId, discount, discountType) => {
+                    if (!actor) return;
+                    await actor.updateOrderDiscount(
+                      orderId,
+                      discount,
+                      discountType,
+                    );
+                  }}
                   index={i + 1}
                   menuItems={menuItems}
                 />
@@ -524,6 +583,7 @@ function StaffDashboard() {
         <InvoiceListScreen
           orders={allOrders}
           onBack={() => setCurrentView("dashboard")}
+          onEditOrder={handleEditOrder}
         />
       </>
     );
@@ -552,7 +612,46 @@ function StaffDashboard() {
     return (
       <>
         <Toaster position="top-right" theme="dark" />
-        <SettingsPanel onBack={() => setCurrentView("dashboard")} />
+        <SettingsPanel
+          onBack={() => setCurrentView("dashboard")}
+          orders={allOrders}
+          onEditOrder={handleEditOrder}
+        />
+      </>
+    );
+  }
+
+  if (currentView === "reports") {
+    return (
+      <>
+        <Toaster position="top-right" theme="dark" />
+        <ReportsScreen
+          orders={allOrders}
+          onBack={() => setCurrentView("dashboard")}
+          menuItems={menuItems}
+        />
+      </>
+    );
+  }
+
+  if (currentView === "cancelledOrders") {
+    return (
+      <>
+        <Toaster position="top-right" theme="dark" />
+        <OrderListScreen
+          orders={allOrders}
+          onBack={() => setCurrentView("dashboard")}
+          defaultFilter="cancelled"
+        />
+      </>
+    );
+  }
+
+  if (currentView === "qrcodes") {
+    return (
+      <>
+        <Toaster position="top-right" theme="dark" />
+        <QRCodesPanel onBack={() => setCurrentView("dashboard")} />
       </>
     );
   }

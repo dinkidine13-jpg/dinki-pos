@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronLeft, Printer, Search } from "lucide-react";
+import { ChevronLeft, Pencil, Printer, Search } from "lucide-react";
 import { useState } from "react";
-import type { Order } from "../backend";
+import type { Order, OrderItem } from "../backend";
 import { OrderStatus } from "../backend";
+import { InvoiceEditModal } from "./InvoiceEditModal";
 
 const SPECIAL_ITEMS = ["Packing Charges", "Delivery Charge"];
 
@@ -25,27 +26,65 @@ function computeGrandTotal(order: Order) {
   const delivery = deliveryItem
     ? Number(deliveryItem.price) * Number(deliveryItem.quantity)
     : 0;
+  const subtotal = itemsTotal + sgst + cgst + packing + delivery;
+
+  // Apply discount
+  const discountAmt = Number(order.discount ?? 0n);
+  const discountType = order.discountType ?? "flat";
+  let discountValue = 0;
+  if (discountAmt > 0) {
+    if (discountType === "percent") {
+      discountValue = subtotal * (discountAmt / 100 / 100);
+    } else {
+      discountValue = discountAmt / 100;
+    }
+  }
+  const grandTotal = Math.max(0, subtotal - discountValue);
+
   return {
     itemsTotal,
     sgst,
     cgst,
     packing,
     delivery,
-    grandTotal: itemsTotal + sgst + cgst + packing + delivery,
+    discountValue,
+    grandTotal,
   };
 }
 
 function fmt(n: number) {
-  return `₹${n.toFixed(2)}`;
+  return `\u20B9${n.toFixed(2)}`;
 }
 
 function printInvoice(order: Order) {
-  const { itemsTotal, sgst, cgst, packing, delivery, grandTotal } =
-    computeGrandTotal(order);
+  const {
+    itemsTotal,
+    sgst,
+    cgst,
+    packing,
+    delivery,
+    discountValue,
+    grandTotal,
+  } = computeGrandTotal(order);
   const regularItems = order.items.filter(
     (i) => !SPECIAL_ITEMS.includes(i.name),
   );
   const upiUrl = `upi://pay?pa=Paytm-31587057%40ptys&pn=DinkiDine&am=${grandTotal.toFixed(2)}&cu=INR`;
+  const isDriveIn = order.vehicleInfo.model === "DRIVE-IN";
+  const isTakeAway =
+    order.vehicleInfo.licensePlate?.startsWith("TAKEAWAY-") ?? false;
+  const locationLabel = isDriveIn
+    ? "Car No"
+    : isTakeAway
+      ? "Customer"
+      : "Table";
+  const locationValue = isDriveIn
+    ? order.vehicleInfo.licensePlate
+    : isTakeAway
+      ? order.vehicleInfo.licensePlate.replace("TAKEAWAY-", "")
+      : order.vehicleInfo.licensePlate;
+  const discountAmt = Number(order.discount ?? 0n);
+  const discountType = order.discountType ?? "flat";
   const w = window.open("", "_blank", "width=400,height=600");
   if (!w) return;
   w.document.write(`
@@ -53,7 +92,7 @@ function printInvoice(order: Order) {
     <body style="font-family:monospace;font-size:12px;padding:20px;max-width:300px;margin:0 auto">
     <div style="text-align:center"><b>DINKI DINE</b><br/>Dine-In &amp; Takeaway<br/>Invoice #${Number(order.id).toString().padStart(4, "0")}</div>
     <hr/>
-    <div>Table: ${order.vehicleInfo.licensePlate}</div>
+    <div>${locationLabel}: ${locationValue}</div>
     <hr/>
     ${regularItems.map((i) => `<div style="display:flex;justify-content:space-between"><span>${i.name} x${Number(i.quantity)}</span><span>${fmt(Number(i.price) * Number(i.quantity))}</span></div>`).join("")}
     <hr/>
@@ -62,6 +101,7 @@ function printInvoice(order: Order) {
     <div style="display:flex;justify-content:space-between"><span>CGST (2.5%)</span><span>${fmt(cgst)}</span></div>
     ${packing > 0 ? `<div style="display:flex;justify-content:space-between"><span>Packing</span><span>${fmt(packing)}</span></div>` : ""}
     ${delivery > 0 ? `<div style="display:flex;justify-content:space-between"><span>Delivery</span><span>${fmt(delivery)}</span></div>` : ""}
+    ${discountValue > 0 ? `<div style="display:flex;justify-content:space-between;color:green"><span>Discount${discountType === "percent" ? ` (${(discountAmt / 100).toFixed(0)}%)` : ""}</span><span>-${fmt(discountValue)}</span></div>` : ""}
     <hr/>
     <div style="display:flex;justify-content:space-between;font-weight:bold"><span>GRAND TOTAL</span><span>${fmt(grandTotal)}</span></div>
     <div style="text-align:center;margin-top:10px">
@@ -80,10 +120,23 @@ function printInvoice(order: Order) {
 interface InvoiceListScreenProps {
   orders: Order[];
   onBack: () => void;
+  onEditOrder?: (
+    orderId: bigint,
+    items: OrderItem[],
+    packingCharge: bigint,
+    deliveryCharge: bigint,
+    discount: bigint,
+    discountType: string,
+  ) => Promise<void>;
 }
 
-export function InvoiceListScreen({ orders, onBack }: InvoiceListScreenProps) {
+export function InvoiceListScreen({
+  orders,
+  onBack,
+  onEditOrder,
+}: InvoiceListScreenProps) {
   const [search, setSearch] = useState("");
+  const [editOrder, setEditOrder] = useState<Order | null>(null);
 
   const fulfilledOrders = orders.filter(
     (o) => o.status === OrderStatus.fulfilled,
@@ -147,7 +200,9 @@ export function InvoiceListScreen({ orders, onBack }: InvoiceListScreenProps) {
                 <th className="px-3 py-2 text-right text-din-muted font-medium hidden md:table-cell">
                   Time
                 </th>
-                <th className="px-3 py-2" />
+                <th className="px-3 py-2 text-right text-din-muted font-medium">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -164,7 +219,7 @@ export function InvoiceListScreen({ orders, onBack }: InvoiceListScreenProps) {
                 </tr>
               ) : (
                 filtered.map((o, i) => {
-                  const { itemsTotal, sgst, cgst, grandTotal } =
+                  const { itemsTotal, sgst, cgst, discountValue, grandTotal } =
                     computeGrandTotal(o);
                   const time = new Date(
                     Number(o.timestamp) / 1_000_000,
@@ -172,6 +227,15 @@ export function InvoiceListScreen({ orders, onBack }: InvoiceListScreenProps) {
                     hour: "2-digit",
                     minute: "2-digit",
                   });
+                  const isDriveIn = o.vehicleInfo.model === "DRIVE-IN";
+                  const isTakeAway =
+                    o.vehicleInfo.licensePlate?.startsWith("TAKEAWAY-") ??
+                    false;
+                  const displayLocation = isDriveIn
+                    ? o.vehicleInfo.licensePlate
+                    : isTakeAway
+                      ? o.vehicleInfo.licensePlate.replace("TAKEAWAY-", "")
+                      : o.vehicleInfo.licensePlate;
                   return (
                     <tr
                       key={o.id.toString()}
@@ -182,31 +246,54 @@ export function InvoiceListScreen({ orders, onBack }: InvoiceListScreenProps) {
                         #{Number(o.id).toString().padStart(4, "0")}
                       </td>
                       <td className="px-3 py-2 text-din-text">
-                        {o.vehicleInfo.licensePlate}
+                        {displayLocation}
                       </td>
                       <td className="px-3 py-2 text-right text-din-muted hidden sm:table-cell">
-                        ₹{itemsTotal.toFixed(0)}
+                        \u20B9{itemsTotal.toFixed(0)}
                       </td>
                       <td className="px-3 py-2 text-right text-din-muted hidden sm:table-cell">
-                        ₹{(sgst + cgst).toFixed(0)}
+                        \u20B9{(sgst + cgst).toFixed(0)}
                       </td>
                       <td className="px-3 py-2 text-right text-din-teal font-medium">
-                        ₹{grandTotal.toFixed(2)}
+                        {discountValue > 0 ? (
+                          <span className="flex flex-col items-end">
+                            <span>\u20B9{grandTotal.toFixed(2)}</span>
+                            <span className="text-[9px] text-din-green">
+                              disc. applied
+                            </span>
+                          </span>
+                        ) : (
+                          `\u20B9${grandTotal.toFixed(2)}`
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right text-din-muted hidden md:table-cell">
                         {time}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Button
-                          data-ocid={`invoice_list.button.${i + 1}`}
-                          size="sm"
-                          variant="outline"
-                          onClick={() => printInvoice(o)}
-                          className="h-6 px-2 text-[10px] border-din-border text-din-muted hover:bg-din-surface-alt"
-                        >
-                          <Printer className="w-3 h-3 mr-1" />
-                          Print
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {onEditOrder && (
+                            <Button
+                              data-ocid={`invoice_list.edit_button.${i + 1}`}
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setEditOrder(o)}
+                              className="h-6 px-2 text-[10px] border-din-border text-din-teal hover:bg-din-teal/10"
+                            >
+                              <Pencil className="w-3 h-3 mr-1" />
+                              Edit
+                            </Button>
+                          )}
+                          <Button
+                            data-ocid={`invoice_list.button.${i + 1}`}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => printInvoice(o)}
+                            className="h-6 px-2 text-[10px] border-din-border text-din-muted hover:bg-din-surface-alt"
+                          >
+                            <Printer className="w-3 h-3 mr-1" />
+                            Print
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -216,6 +303,15 @@ export function InvoiceListScreen({ orders, onBack }: InvoiceListScreenProps) {
           </table>
         </div>
       </main>
+
+      {onEditOrder && (
+        <InvoiceEditModal
+          open={editOrder !== null}
+          order={editOrder}
+          onClose={() => setEditOrder(null)}
+          onSave={onEditOrder}
+        />
+      )}
     </div>
   );
 }

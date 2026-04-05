@@ -59,7 +59,7 @@ interface LocalMenuItem {
   slots: TimeSlot[];
 }
 
-const CATEGORY_SLOTS: Record<string, TimeSlot[]> = {
+const DEFAULT_CATEGORY_SLOTS: Record<string, TimeSlot[]> = {
   "Hot n Hot": [{ start: [9, 0], end: [23, 0] }],
   Dosa: [{ start: [9, 0], end: [23, 0] }],
   Breakfast: [{ start: [7, 0], end: [12, 0] }],
@@ -78,6 +78,21 @@ const CATEGORY_SLOTS: Record<string, TimeSlot[]> = {
   Softdrinks: [{ start: [9, 0], end: [23, 0] }],
   "Grill n spice": [{ start: [9, 0], end: [23, 0] }],
 };
+
+function getCategorySlots(): Record<string, TimeSlot[]> {
+  try {
+    const data = localStorage.getItem("dinki_category_timing");
+    if (data) return { ...DEFAULT_CATEGORY_SLOTS, ...JSON.parse(data) };
+  } catch {}
+  return DEFAULT_CATEGORY_SLOTS;
+}
+
+// Use a proxy that reads from localStorage at call time
+const CATEGORY_SLOTS = new Proxy({} as Record<string, TimeSlot[]>, {
+  get(_target, prop: string) {
+    return getCategorySlots()[prop];
+  },
+});
 
 const ALL_MENU_ITEMS: LocalMenuItem[] = [
   {
@@ -201,7 +216,10 @@ const CATEGORY_SCHEDULE: Record<string, string> = {
 };
 
 function isAvailableNow(item: LocalMenuItem): boolean {
-  return item.slots.some((s) => inRange(s.start, s.end));
+  // Always read from localStorage to respect timing changes made in MenuAdmin
+  const slots = getCategorySlots();
+  const catSlots = slots[item.category] ?? item.slots;
+  return catSlots.some((s) => inRange(s.start, s.end));
 }
 
 function backendToLocal(items: BackendMenuItem[]): LocalMenuItem[] {
@@ -211,7 +229,8 @@ function backendToLocal(items: BackendMenuItem[]): LocalMenuItem[] {
       name: i.name,
       price: Number(i.price),
       category: i.category as LocalMenuItem["category"],
-      slots: CATEGORY_SLOTS[i.category] ?? CATEGORY_SLOTS["Main course"],
+      slots: getCategorySlots()[i.category] ??
+        getCategorySlots()["Main course"] ?? [{ start: [9, 0], end: [23, 0] }],
     }));
 }
 
@@ -436,6 +455,8 @@ export function NewOrderModal({
       customerMobile: customerPhone.trim(),
       timestamp: BigInt(Date.now()) * 1_000_000n,
       items,
+      discount: 0n,
+      discountType: "flat",
     };
 
     setIsSubmitting(true);
@@ -477,12 +498,15 @@ export function NewOrderModal({
 
         <div className="space-y-4 py-2">
           {/* Order type toggle */}
-          <div className="w-full flex rounded-lg overflow-hidden border border-din-border">
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}
+            className="w-full rounded-lg overflow-hidden border border-din-border"
+          >
             <button
               type="button"
               data-ocid="new_order.toggle"
               onClick={() => setOrderType("dineIn")}
-              className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 px-1 text-xs font-semibold transition-colors ${
+              className={`flex flex-col items-center justify-center gap-0.5 py-2 px-1 text-xs font-semibold transition-colors ${
                 orderType === "dineIn"
                   ? "bg-din-teal/20 text-din-teal"
                   : "bg-din-surface-alt text-din-muted hover:text-din-text"
@@ -497,7 +521,7 @@ export function NewOrderModal({
               type="button"
               data-ocid="new_order.toggle"
               onClick={() => setOrderType("takeAway")}
-              className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 px-1 text-xs font-semibold transition-colors border-l border-din-border ${
+              className={`flex flex-col items-center justify-center gap-0.5 py-2 px-1 text-xs font-semibold transition-colors border-l border-din-border ${
                 orderType === "takeAway"
                   ? "bg-din-orange/20 text-din-orange"
                   : "bg-din-surface-alt text-din-muted hover:text-din-text"
@@ -512,7 +536,7 @@ export function NewOrderModal({
               type="button"
               data-ocid="new_order.toggle"
               onClick={() => setOrderType("driveIn")}
-              className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 px-1 text-xs font-semibold transition-colors border-l border-din-border ${
+              className={`flex flex-col items-center justify-center gap-0.5 py-2 px-1 text-xs font-semibold transition-colors border-l border-din-border ${
                 orderType === "driveIn"
                   ? "bg-yellow-400/20 text-yellow-400"
                   : "bg-din-surface-alt text-din-muted hover:text-din-text"

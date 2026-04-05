@@ -8,32 +8,36 @@ import Order "mo:core/Order";
 import Iter "mo:core/Iter";
 import Nat "mo:core/Nat";
 
+import List "mo:core/List";
 
 
 actor {
-  type Timestamp = Time.Time;
+  public type Timestamp = Time.Time;
 
-  type VehicleInfo = {
+  public type VehicleInfo = {
     make : Text;
     model : Text;
     color : Text;
     licensePlate : Text;
   };
 
-  type OrderStatus = {
+  public type OrderStatus = {
     #pending;
     #preparing;
     #ready;
     #fulfilled;
+    #cancelled;
   };
 
-  type OrderInput = {
+  public type OrderInput = {
     id : Nat;
     vehicleInfo : VehicleInfo;
     customerMobile : Text;
     items : [OrderItem];
     timestamp : Timestamp;
     status : OrderStatus;
+    discount : Nat;
+    discountType : Text; // "flat" or "percent"
   };
 
   public type Order = {
@@ -43,15 +47,18 @@ actor {
     items : [OrderItem];
     timestamp : Timestamp;
     status : OrderStatus;
+    discount : Nat;
+    discountType : Text; // "flat" or "percent"
+    cancellationReason : Text;
   };
 
-  type OrderItem = {
+  public type OrderItem = {
     name : Text;
     quantity : Nat;
     price : Nat;
   };
 
-  type Notification = {
+  public type Notification = {
     id : Nat;
     orderId : Nat;
     message : Text;
@@ -59,7 +66,7 @@ actor {
     timestamp : Timestamp;
   };
 
-  type NotificationInput = {
+  public type NotificationInput = {
     orderId : Nat;
     message : Text;
   };
@@ -81,6 +88,30 @@ actor {
     public func compareByTimestamp(n1 : Notification, n2 : Notification) : Order.Order {
       Int.compare(n1.timestamp, n2.timestamp);
     };
+  };
+
+  type InvoiceRecord = {
+    orderId : Nat;
+    invoiceNumber : Nat;
+    timestamp : Time.Time;
+    items : [OrderItem];
+    packingCharge : Nat;
+    deliveryCharge : Nat;
+    totalAmount : Nat;
+    paymentMode : Text;
+    discount : Nat;
+    discountType : Text;
+  };
+
+  public type InvoiceInput = {
+    orderId : Nat;
+    items : [OrderItem];
+    packingCharge : Nat;
+    deliveryCharge : Nat;
+    totalAmount : Nat;
+    paymentMode : Text;
+    discount : Nat;
+    discountType : Text;
   };
 
   var nextOrderId = 1;
@@ -187,7 +218,7 @@ actor {
       // Return default items inline for query (can't mutate in query)
       return Array.tabulate<MenuItem>(DEFAULT_MENU.size(), func(i) {
         let (name, category, price, printer) = DEFAULT_MENU[i];
-        { id = i + 1; name; category; price; printerNumber = printer; available = true }
+        { id = i + 1; name; category; price; printerNumber = printer; available = true };
       });
     };
     menuItems.values().toArray();
@@ -197,7 +228,7 @@ actor {
     seedMenu();
   };
 
-  public shared func addMenuItem(name : Text, category : Text, price : Nat, printerNumber : Nat) : async Nat {
+  public shared ({ caller }) func addMenuItem(name : Text, category : Text, price : Nat, printerNumber : Nat) : async Nat {
     ensureSeeded();
     let id = nextMenuItemId;
     nextMenuItemId += 1;
@@ -205,7 +236,7 @@ actor {
     id;
   };
 
-  public shared func updateMenuItem(id : Nat, name : Text, category : Text, price : Nat, printerNumber : Nat, available : Bool) : async () {
+  public shared ({ caller }) func updateMenuItem(id : Nat, name : Text, category : Text, price : Nat, printerNumber : Nat, available : Bool) : async () {
     ensureSeeded();
     switch (menuItems.get(id)) {
       case (null) { Runtime.trap("Menu item not found") };
@@ -215,12 +246,12 @@ actor {
     };
   };
 
-  public shared func deleteMenuItem(id : Nat) : async () {
+  public shared ({ caller }) func deleteMenuItem(id : Nat) : async () {
     ensureSeeded();
     menuItems.remove(id);
   };
 
-  public shared func resetMenuToDefaults() : async () {
+  public shared ({ caller }) func resetMenuToDefaults() : async () {
     menuItems.clear();
     nextMenuItemId := 1;
     menuSeeded := false;
@@ -240,6 +271,9 @@ actor {
       items = order.items;
       timestamp = order.timestamp;
       status = #pending;
+      discount = order.discount;
+      discountType = order.discountType;
+      cancellationReason = "";
     };
 
     orders.add(orderId, newOrder);
@@ -261,13 +295,25 @@ actor {
     };
   };
 
-  public shared ({ caller }) func addItemsToOrder(orderId : Nat, newItems : [OrderItem], packingCharge : Nat, deliveryCharge : Nat) : async () {
+  public shared ({ caller }) func cancelOrder(orderId : Nat, reason : Text) : async () {
     switch (orders.get(orderId)) {
       case (null) { Runtime.trap("Order not found") };
       case (?order) {
-        let updatedItems = order.items.concat(newItems);
+        let updatedOrder = {
+          order with
+          status = #cancelled;
+          cancellationReason = reason;
+        };
+        orders.add(orderId, updatedOrder);
+      };
+    };
+  };
 
-        let updatedWithCharges = updatedItems.map(
+  func addOrUpdateItems(orderId : Nat, newItems : [OrderItem], packingCharge : Nat, deliveryCharge : Nat, isFullUpdate : Bool) : async () {
+    switch (orders.get(orderId)) {
+      case (null) { Runtime.trap("Order not found") };
+      case (?order) {
+        let updatedItems = newItems.map(
           func(item) {
             if (item.name == "Packing Charges") {
               { item with price = packingCharge };
@@ -279,7 +325,35 @@ actor {
           }
         );
 
-        let updatedOrder = { order with items = updatedWithCharges };
+        let resultingItems = if (isFullUpdate) {
+          updatedItems;
+        } else {
+          order.items.concat(updatedItems);
+        };
+
+        let updatedOrder = { order with items = resultingItems };
+        orders.add(orderId, updatedOrder);
+      };
+    };
+  };
+
+  public shared ({ caller }) func addItemsToOrder(orderId : Nat, newItems : [OrderItem], packingCharge : Nat, deliveryCharge : Nat) : async () {
+    await addOrUpdateItems(orderId, newItems, packingCharge, deliveryCharge, false);
+  };
+
+  public shared ({ caller }) func updateOrderItems(orderId : Nat, items : [OrderItem], packingCharge : Nat, deliveryCharge : Nat) : async () {
+    await addOrUpdateItems(orderId, items, packingCharge, deliveryCharge, true);
+  };
+
+  public shared ({ caller }) func updateOrderDiscount(orderId : Nat, discount : Nat, discountType : Text) : async () {
+    switch (orders.get(orderId)) {
+      case (null) { Runtime.trap("Order not found") };
+      case (?order) {
+        let updatedOrder = {
+          order with
+          discount;
+          discountType;
+        };
         orders.add(orderId, updatedOrder);
       };
     };

@@ -15,6 +15,7 @@ export const OrderItem = IDL.Record({
 });
 export const OrderStatus = IDL.Variant({
   'preparing' : IDL.Null,
+  'cancelled' : IDL.Null,
   'pending' : IDL.Null,
   'fulfilled' : IDL.Null,
   'ready' : IDL.Null,
@@ -30,8 +31,11 @@ export const Order = IDL.Record({
   'id' : IDL.Nat,
   'status' : OrderStatus,
   'vehicleInfo' : VehicleInfo,
+  'cancellationReason' : IDL.Text,
+  'discountType' : IDL.Text,
   'customerMobile' : IDL.Text,
   'timestamp' : Timestamp,
+  'discount' : IDL.Nat,
   'items' : IDL.Vec(OrderItem),
 });
 export const MenuItem = IDL.Record({
@@ -53,8 +57,10 @@ export const OrderInput = IDL.Record({
   'id' : IDL.Nat,
   'status' : OrderStatus,
   'vehicleInfo' : VehicleInfo,
+  'discountType' : IDL.Text,
   'customerMobile' : IDL.Text,
   'timestamp' : Timestamp,
+  'discount' : IDL.Nat,
   'items' : IDL.Vec(OrderItem),
 });
 
@@ -71,6 +77,7 @@ export const idlService = IDL.Service({
       [IDL.Nat],
       [],
     ),
+  'cancelOrder' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   'clearAllData' : IDL.Func([], [], []),
   'clearAllNotifications' : IDL.Func([], [], []),
   'clearAllOrders' : IDL.Func([], [], []),
@@ -94,6 +101,12 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
+  'updateOrderDiscount' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Text], [], []),
+  'updateOrderItems' : IDL.Func(
+      [IDL.Nat, IDL.Vec(OrderItem), IDL.Nat, IDL.Nat],
+      [],
+      [],
+    ),
   'updateOrderStatus' : IDL.Func([IDL.Nat, OrderStatus], [], []),
 });
 
@@ -107,6 +120,7 @@ export const idlFactory = ({ IDL }) => {
   });
   const OrderStatus = IDL.Variant({
     'preparing' : IDL.Null,
+    'cancelled' : IDL.Null,
     'pending' : IDL.Null,
     'fulfilled' : IDL.Null,
     'ready' : IDL.Null,
@@ -122,8 +136,11 @@ export const idlFactory = ({ IDL }) => {
     'id' : IDL.Nat,
     'status' : OrderStatus,
     'vehicleInfo' : VehicleInfo,
+    'cancellationReason' : IDL.Text,
+    'discountType' : IDL.Text,
     'customerMobile' : IDL.Text,
     'timestamp' : Timestamp,
+    'discount' : IDL.Nat,
     'items' : IDL.Vec(OrderItem),
   });
   const MenuItem = IDL.Record({
@@ -145,8 +162,10 @@ export const idlFactory = ({ IDL }) => {
     'id' : IDL.Nat,
     'status' : OrderStatus,
     'vehicleInfo' : VehicleInfo,
+    'discountType' : IDL.Text,
     'customerMobile' : IDL.Text,
     'timestamp' : Timestamp,
+    'discount' : IDL.Nat,
     'items' : IDL.Vec(OrderItem),
   });
   
@@ -163,6 +182,7 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Nat],
         [],
       ),
+    'cancelOrder' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'clearAllData' : IDL.Func([], [], []),
     'clearAllNotifications' : IDL.Func([], [], []),
     'clearAllOrders' : IDL.Func([], [], []),
@@ -183,6 +203,12 @@ export const idlFactory = ({ IDL }) => {
     'resetMenuToDefaults' : IDL.Func([], [], []),
     'updateMenuItem' : IDL.Func(
         [IDL.Nat, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Bool],
+        [],
+        [],
+      ),
+    'updateOrderDiscount' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Text], [], []),
+    'updateOrderItems' : IDL.Func(
+        [IDL.Nat, IDL.Vec(OrderItem), IDL.Nat, IDL.Nat],
         [],
         [],
       ),

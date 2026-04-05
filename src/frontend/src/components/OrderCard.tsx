@@ -9,12 +9,14 @@ import {
   PlusCircle,
   Printer,
   Receipt,
+  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import type { Order, OrderItem } from "../backend";
 import { OrderStatus } from "../backend";
 import type { MenuItem } from "../types/menu";
 import { AddItemsModal } from "./AddItemsModal";
+import { CancelOrderModal } from "./CancelOrderModal";
 import { IssueBillModal } from "./IssueBillModal";
 
 // Drive-In / TakeAway detection helpers
@@ -34,6 +36,12 @@ interface OrderCardProps {
     packingCharge: bigint,
     deliveryCharge: bigint,
   ) => Promise<void>;
+  onCancelOrder: (orderId: bigint, reason: string) => Promise<void>;
+  onApplyDiscount?: (
+    orderId: bigint,
+    discount: bigint,
+    discountType: string,
+  ) => Promise<void>;
   index: number;
   menuItems?: MenuItem[];
 }
@@ -49,7 +57,7 @@ function formatTime(timestampNs: bigint): string {
 }
 
 function fmt(amount: number): string {
-  return `₹${amount.toFixed(2)}`;
+  return `\u20B9${amount.toFixed(2)}`;
 }
 
 const STATUS_CONFIG: Record<OrderStatus, { label: string; className: string }> =
@@ -70,6 +78,10 @@ const STATUS_CONFIG: Record<OrderStatus, { label: string; className: string }> =
       label: "Fulfilled",
       className: "bg-din-muted/20 text-din-muted border-din-muted/30",
     },
+    [OrderStatus.cancelled]: {
+      label: "Cancelled",
+      className: "bg-din-red/20 text-din-red border-din-red/30",
+    },
   };
 
 const SPECIAL_ITEMS = ["Packing Charges", "Delivery Charge"];
@@ -78,13 +90,17 @@ export function OrderCard({
   order,
   onUpdateStatus,
   onAddItems,
+  onCancelOrder,
+  onApplyDiscount,
   index,
   menuItems,
 }: OrderCardProps) {
   const [showAddItems, setShowAddItems] = useState(false);
   const [showIssueBill, setShowIssueBill] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
-  const statusCfg = STATUS_CONFIG[order.status];
+  const statusCfg =
+    STATUS_CONFIG[order.status] ?? STATUS_CONFIG[OrderStatus.pending];
 
   const regularItems = order.items.filter(
     (i) => !SPECIAL_ITEMS.includes(i.name),
@@ -106,9 +122,27 @@ export function OrderCard({
   const delivery = deliveryItem
     ? Number(deliveryItem.price) * Number(deliveryItem.quantity)
     : 0;
-  const grandTotal = itemsTotal + sgst + cgst + packing + delivery;
+  const subtotal = itemsTotal + sgst + cgst + packing + delivery;
 
-  const isOpen = order.status !== OrderStatus.fulfilled;
+  // Apply discount
+  const discountAmt = Number(order.discount ?? 0n);
+  const discountType = order.discountType ?? "flat";
+  let discountValue = 0;
+  if (discountAmt > 0) {
+    if (discountType === "percent") {
+      discountValue = subtotal * (discountAmt / 10000); // stored as basis points (100 = 1%)
+    } else {
+      discountValue = discountAmt / 100; // stored as paisa
+    }
+  }
+  const grandTotal = Math.max(0, subtotal - discountValue);
+
+  const isCancelled = order.status === OrderStatus.cancelled;
+  const isFulfilled = order.status === OrderStatus.fulfilled;
+  const isOpen = !isFulfilled && !isCancelled;
+  const canCancel =
+    order.status === OrderStatus.pending ||
+    order.status === OrderStatus.preparing;
 
   // Build a lookup: item name -> printerNumber
   const printerLookup = new Map<string, number>();
@@ -173,7 +207,7 @@ export function OrderCard({
         (order.vehicleInfo.make !== "N/A" || order.vehicleInfo.color !== "N/A")
           ? `  Car: ${[order.vehicleInfo.make, order.vehicleInfo.color].filter((v) => v && v !== "N/A").join(", ")}`
           : "";
-      win.document.write(`<html><head><title>KOT #${kotNo} – Kitchen ${printer}</title><style>
+      win.document.write(`<html><head><title>KOT #${kotNo} \u2013 Kitchen ${printer}</title><style>
       body { font-family: monospace; font-size: 13px; padding: 16px; margin: 0; }
       .center { text-align: center; }
       .divider { border: none; border-top: 1px dashed #000; margin: 8px 0; }
@@ -188,12 +222,7 @@ export function OrderCard({
   KOT No: ${kotNo}
   Date: ${dateStr}   Time: ${timeStr}
 -------------------------------------
-  ${locationLabel}: ${locationValue}${
-    carDetails
-      ? `
-${carDetails}`
-      : ""
-  }
+  ${locationLabel}: ${locationValue}${carDetails ? `\n${carDetails}` : ""}
 -------------------------------------
   ITEMS:
 ${itemLines}
@@ -212,14 +241,24 @@ ${itemLines}
     <>
       <div
         data-ocid={`orders.item.${index}`}
-        className="bg-din-surface border border-din-border rounded-lg p-4 shadow-card"
+        className={`bg-din-surface border rounded-lg p-4 shadow-card ${
+          isCancelled ? "border-din-red/30 opacity-80" : "border-din-border"
+        }`}
       >
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <span
-                className={`text-xs font-semibold uppercase tracking-wider ${isDriveInOrder(order) ? "text-yellow-400" : isTakeAwayOrder(order) ? "text-din-orange" : "text-din-teal"}`}
+                className={`text-xs font-semibold uppercase tracking-wider ${
+                  isCancelled
+                    ? "text-din-red"
+                    : isDriveInOrder(order)
+                      ? "text-yellow-400"
+                      : isTakeAwayOrder(order)
+                        ? "text-din-orange"
+                        : "text-din-teal"
+                }`}
               >
                 {isDriveInOrder(order)
                   ? "Car"
@@ -241,7 +280,7 @@ ${itemLines}
                 <span className="text-[10px] text-din-muted pl-0.5">
                   {[order.vehicleInfo.make, order.vehicleInfo.color]
                     .filter((v) => v && v !== "N/A")
-                    .join(" • ")}
+                    .join(" \u2022 ")}
                 </span>
               )}
           </div>
@@ -268,6 +307,16 @@ ${itemLines}
           </span>
         </div>
 
+        {/* Cancellation reason */}
+        {isCancelled && order.cancellationReason && (
+          <div className="mb-3 px-2 py-1.5 rounded bg-din-red/10 border border-din-red/20">
+            <p className="text-[11px] text-din-red">
+              <span className="font-semibold">Reason: </span>
+              {order.cancellationReason}
+            </p>
+          </div>
+        )}
+
         {/* Items */}
         <div className="mb-3">
           <div className="flex flex-wrap gap-1">
@@ -279,7 +328,7 @@ ${itemLines}
                   className="text-[11px] px-2 py-0.5 rounded bg-din-surface-alt border border-din-border text-din-text"
                   title={printer ? `Kitchen ${printer}` : undefined}
                 >
-                  {item.name} ×{Number(item.quantity)}
+                  {item.name} \u00d7{Number(item.quantity)}
                   {printer && (
                     <span className="ml-1 text-[9px] text-din-muted opacity-60">
                       K{printer}
@@ -294,7 +343,7 @@ ${itemLines}
           </p>
         </div>
 
-        {/* Invoice Summary — always visible */}
+        {/* Invoice Summary \u2014 always visible */}
         <div className="border-t border-din-border/60 pt-2 mb-3">
           <div className="space-y-0.5">
             <div className="flex justify-between text-[11px] text-din-muted">
@@ -319,6 +368,17 @@ ${itemLines}
               <div className="flex justify-between text-[11px] text-din-muted">
                 <span>Delivery</span>
                 <span>{fmt(delivery)}</span>
+              </div>
+            )}
+            {discountValue > 0 && (
+              <div className="flex justify-between text-[11px] text-din-green">
+                <span>
+                  Discount
+                  {discountType === "percent"
+                    ? ` (${(discountAmt / 100).toFixed(0)}%)`
+                    : ""}
+                </span>
+                <span>-{fmt(discountValue)}</span>
               </div>
             )}
           </div>
@@ -363,14 +423,20 @@ ${itemLines}
               Fulfill
             </Button>
           )}
-          {order.status === OrderStatus.fulfilled && (
+          {isFulfilled && (
             <span className="text-xs text-din-muted flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 text-din-green" />
               Completed
             </span>
           )}
+          {isCancelled && (
+            <span className="text-xs text-din-red flex items-center gap-1">
+              <XCircle className="w-3 h-3" />
+              Cancelled
+            </span>
+          )}
 
-          {/* Tab buttons — only for open orders */}
+          {/* Tab buttons \u2014 only for open orders */}
           {isOpen && (
             <>
               <Button
@@ -400,6 +466,17 @@ ${itemLines}
                 <Receipt className="w-3 h-3 mr-1" />
                 Issue Bill
               </Button>
+              {canCancel && (
+                <Button
+                  data-ocid={`orders.delete_button.${index}`}
+                  size="sm"
+                  onClick={() => setShowCancelModal(true)}
+                  className="h-7 text-xs px-3 bg-din-red/10 hover:bg-din-red/20 border border-din-red/30 text-din-red font-medium"
+                >
+                  <XCircle className="w-3 h-3 mr-1" />
+                  Cancel
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -419,6 +496,14 @@ ${itemLines}
         onCloseTab={async (orderId) => {
           await onUpdateStatus(orderId, OrderStatus.fulfilled);
         }}
+        onApplyDiscount={onApplyDiscount}
+      />
+
+      <CancelOrderModal
+        open={showCancelModal}
+        order={order}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={onCancelOrder}
       />
     </>
   );

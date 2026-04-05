@@ -33,8 +33,10 @@ export interface OrderInput {
     id: bigint;
     status: OrderStatus;
     vehicleInfo: VehicleInfo;
+    discountType: string;
     customerMobile: string;
     timestamp: Timestamp;
+    discount: bigint;
     items: Array<OrderItem>;
 }
 export interface OrderItem {
@@ -46,12 +48,16 @@ export interface Order {
     id: bigint;
     status: OrderStatus;
     vehicleInfo: VehicleInfo;
+    cancellationReason: string;
+    discountType: string;
     customerMobile: string;
     timestamp: Timestamp;
+    discount: bigint;
     items: Array<OrderItem>;
 }
 export enum OrderStatus {
     preparing = "preparing",
+    cancelled = "cancelled",
     pending = "pending",
     fulfilled = "fulfilled",
     ready = "ready"
@@ -61,6 +67,7 @@ export interface backendInterface {
     acknowledgeNotification(notificationId: bigint): Promise<void>;
     addItemsToOrder(orderId: bigint, newItems: Array<OrderItem>, packingCharge: bigint, deliveryCharge: bigint): Promise<void>;
     addMenuItem(name: string, category: string, price: bigint, printerNumber: bigint): Promise<bigint>;
+    cancelOrder(orderId: bigint, reason: string): Promise<void>;
     clearAllData(): Promise<void>;
     clearAllNotifications(): Promise<void>;
     clearAllOrders(): Promise<void>;
@@ -76,5 +83,7 @@ export interface backendInterface {
     placeOrder(order: OrderInput): Promise<bigint>;
     resetMenuToDefaults(): Promise<void>;
     updateMenuItem(id: bigint, name: string, category: string, price: bigint, printerNumber: bigint, available: boolean): Promise<void>;
+    updateOrderDiscount(orderId: bigint, discount: bigint, discountType: string): Promise<void>;
+    updateOrderItems(orderId: bigint, items: Array<OrderItem>, packingCharge: bigint, deliveryCharge: bigint): Promise<void>;
     updateOrderStatus(orderId: bigint, status: OrderStatus): Promise<void>;
 }

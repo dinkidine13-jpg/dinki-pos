@@ -16,30 +16,44 @@ function statusColor(status: string) {
       return "bg-din-teal/20 text-din-teal border-din-teal/30";
     case OrderStatus.preparing:
       return "bg-din-orange/20 text-din-orange border-din-orange/30";
-    default:
+    case OrderStatus.cancelled:
       return "bg-din-red/20 text-din-red border-din-red/30";
+    default:
+      return "bg-din-muted/20 text-din-muted border-din-muted/30";
   }
 }
+
+type FilterValue =
+  | "all"
+  | "pending"
+  | "preparing"
+  | "ready"
+  | "fulfilled"
+  | "cancelled";
 
 interface OrderListScreenProps {
   orders: Order[];
   onBack: () => void;
+  defaultFilter?: FilterValue;
 }
 
-export function OrderListScreen({ orders, onBack }: OrderListScreenProps) {
+export function OrderListScreen({
+  orders,
+  onBack,
+  defaultFilter = "all",
+}: OrderListScreenProps) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<
-    "all" | "pending" | "preparing" | "ready" | "fulfilled"
-  >("all");
+  const [filter, setFilter] = useState<FilterValue>(defaultFilter);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const FILTER_PILLS = [
+  const FILTER_PILLS: { key: FilterValue; label: string }[] = [
     { key: "all", label: "All" },
     { key: "pending", label: "Pending" },
     { key: "preparing", label: "Preparing" },
     { key: "ready", label: "Ready" },
     { key: "fulfilled", label: "Fulfilled" },
-  ] as const;
+    { key: "cancelled", label: "Cancelled" },
+  ];
 
   const filtered = orders.filter((o) => {
     const matchSearch =
@@ -60,7 +74,9 @@ export function OrderListScreen({ orders, onBack }: OrderListScreenProps) {
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <h1 className="font-bold text-din-text text-base flex-1">Order List</h1>
+        <h1 className="font-bold text-din-text text-base flex-1">
+          {defaultFilter === "cancelled" ? "Cancelled Orders" : "Order List"}
+        </h1>
         <span className="text-xs text-din-muted">{filtered.length} orders</span>
       </header>
 
@@ -87,7 +103,9 @@ export function OrderListScreen({ orders, onBack }: OrderListScreenProps) {
               onClick={() => setFilter(pill.key)}
               className={`px-3 py-1 text-xs rounded-full font-medium transition-colors border ${
                 filter === pill.key
-                  ? "bg-din-teal/20 border-din-teal/50 text-din-teal"
+                  ? pill.key === "cancelled"
+                    ? "bg-din-red/20 border-din-red/50 text-din-red"
+                    : "bg-din-teal/20 border-din-teal/50 text-din-teal"
                   : "border-din-border text-din-muted hover:text-din-text hover:border-din-muted"
               }`}
             >
@@ -158,12 +176,15 @@ export function OrderListScreen({ orders, onBack }: OrderListScreenProps) {
                     minute: "2-digit",
                   });
                   const isExpanded = expandedId === o.id.toString();
+                  const isCancelled = o.status === OrderStatus.cancelled;
                   return (
                     <>
                       <tr
                         key={o.id.toString()}
                         data-ocid={`order_list.item.${i + 1}`}
-                        className="border-t border-din-border hover:bg-din-surface-alt transition-colors cursor-pointer"
+                        className={`border-t border-din-border hover:bg-din-surface-alt transition-colors cursor-pointer ${
+                          isCancelled ? "opacity-70" : ""
+                        }`}
                         onClick={() =>
                           setExpandedId(isExpanded ? null : o.id.toString())
                         }
@@ -185,7 +206,7 @@ export function OrderListScreen({ orders, onBack }: OrderListScreenProps) {
                           )}
                         </td>
                         <td className="px-3 py-2 text-right text-din-teal font-medium">
-                          ₹{grandTotal.toFixed(0)}
+                          \u20B9{grandTotal.toFixed(0)}
                         </td>
                         <td className="px-3 py-2 text-center">
                           <Badge
@@ -212,6 +233,16 @@ export function OrderListScreen({ orders, onBack }: OrderListScreenProps) {
                         >
                           <td colSpan={7} className="px-4 py-3">
                             <div className="space-y-1">
+                              {isCancelled && o.cancellationReason && (
+                                <div className="mb-2 px-2 py-1.5 rounded bg-din-red/10 border border-din-red/20">
+                                  <p className="text-[11px] text-din-red">
+                                    <span className="font-semibold">
+                                      Reason:{" "}
+                                    </span>
+                                    {o.cancellationReason}
+                                  </p>
+                                </div>
+                              )}
                               {regularItems.map((item) => (
                                 <div
                                   key={item.name}
@@ -220,11 +251,11 @@ export function OrderListScreen({ orders, onBack }: OrderListScreenProps) {
                                   <span className="text-din-text">
                                     {item.name}{" "}
                                     <span className="text-din-muted">
-                                      ×{Number(item.quantity)}
+                                      \u00d7{Number(item.quantity)}
                                     </span>
                                   </span>
                                   <span className="text-din-muted">
-                                    ₹
+                                    \u20B9
                                     {(
                                       Number(item.price) * Number(item.quantity)
                                     ).toFixed(0)}

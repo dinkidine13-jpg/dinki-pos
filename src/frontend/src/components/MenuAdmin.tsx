@@ -32,6 +32,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
+  Clock,
   Download,
   Loader2,
   Pencil,
@@ -41,7 +42,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { backendInterface } from "../backend";
 import { useActor } from "../hooks/useActor";
@@ -64,6 +65,85 @@ const CATEGORIES = [
   "Grill n spice",
 ] as const;
 const PIN_KEY = "dinki_admin_pin_ok";
+const TIMING_KEY = "dinki_category_timing";
+const PERMISSIONS_KEY = "dinki_role_permissions";
+
+// ── Default timing slots ─────────────────────────────────────────
+type TimeSlot = { start: [number, number]; end: [number, number] };
+type CategorySlots = Record<string, TimeSlot[]>;
+
+const DEFAULT_CATEGORY_SLOTS: CategorySlots = {
+  "Hot n Hot": [{ start: [9, 0], end: [23, 0] }],
+  Dosa: [{ start: [9, 0], end: [23, 0] }],
+  Breakfast: [{ start: [7, 0], end: [12, 0] }],
+  Chaat: [{ start: [9, 0], end: [23, 0] }],
+  "Ice cream novelties": [{ start: [9, 0], end: [23, 0] }],
+  "Ice cream cups n packs": [{ start: [9, 0], end: [23, 0] }],
+  "Juice n Shakes": [{ start: [9, 0], end: [23, 0] }],
+  Soup: [{ start: [9, 0], end: [23, 0] }],
+  Starter: [{ start: [9, 0], end: [23, 0] }],
+  "Roti (Bread)": [
+    { start: [11, 30], end: [15, 30] },
+    { start: [19, 0], end: [22, 30] },
+  ],
+  "Main course": [{ start: [9, 0], end: [23, 0] }],
+  "Rice n Noodles": [{ start: [9, 0], end: [23, 0] }],
+  Softdrinks: [{ start: [9, 0], end: [23, 0] }],
+  "Grill n spice": [{ start: [9, 0], end: [23, 0] }],
+};
+
+function loadCategorySlots(): CategorySlots {
+  try {
+    const data = localStorage.getItem(TIMING_KEY);
+    if (data) return { ...DEFAULT_CATEGORY_SLOTS, ...JSON.parse(data) };
+  } catch {}
+  return DEFAULT_CATEGORY_SLOTS;
+}
+
+function saveCategorySlots(slots: CategorySlots) {
+  localStorage.setItem(TIMING_KEY, JSON.stringify(slots));
+}
+
+function fmtTime(h: number, m: number) {
+  const hh = String(h).padStart(2, "0");
+  const mm = String(m).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function parseTime(s: string): [number, number] | null {
+  const parts = s.split(":");
+  if (parts.length !== 2) return null;
+  const h = Number.parseInt(parts[0], 10);
+  const m = Number.parseInt(parts[1], 10);
+  if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59)
+    return null;
+  return [h, m];
+}
+
+function getActiveRole(): string {
+  try {
+    // If a specific staff member was selected at login, use their role
+    const session = localStorage.getItem("dinki_active_staff");
+    if (session) {
+      const staff = JSON.parse(session);
+      return staff?.role ?? "Manager";
+    }
+  } catch {}
+  // Default: treat as Manager (full access) when using single admin PIN
+  return "Manager";
+}
+
+function hasPermission(permKey: string): boolean {
+  try {
+    const permsStr = localStorage.getItem(PERMISSIONS_KEY);
+    if (!permsStr) return true; // default allow if no permissions configured
+    const perms = JSON.parse(permsStr);
+    const role = getActiveRole();
+    return perms[role]?.[permKey] ?? true;
+  } catch {
+    return true;
+  }
+}
 const DEFAULT_PIN = "1234";
 
 interface MenuAdminProps {
@@ -335,6 +415,16 @@ export function MenuAdmin({ menuItems, onBack, onReload }: MenuAdminProps) {
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const backendActor = actor as unknown as backendInterface;
+  const [categorySlots, setCategorySlots] =
+    useState<CategorySlots>(loadCategorySlots);
+  const [timingTab, setTimingTab] = useState<string>(CATEGORIES[0]);
+  const canMarkSold = hasPermission("Mark Sold");
+  const canChangeTiming = hasPermission("Change Timing");
+
+  // Reload permission check on mount (in case staff session changed)
+  useEffect(() => {
+    setCategorySlots(loadCategorySlots());
+  }, []);
 
   const handleToggleAvailable = async (item: MenuItem) => {
     if (!actor) return;
@@ -730,10 +820,17 @@ export function MenuAdmin({ menuItems, onBack, onReload }: MenuAdminProps) {
                               <Switch
                                 data-ocid={`menu_admin.switch.${i + 1}`}
                                 checked={item.available}
-                                onCheckedChange={() =>
-                                  handleToggleAvailable(item)
-                                }
-                                className="data-[state=checked]:bg-din-teal"
+                                onCheckedChange={() => {
+                                  if (!canMarkSold) {
+                                    toast.error(
+                                      "You don't have permission to mark items sold/available.",
+                                    );
+                                    return;
+                                  }
+                                  handleToggleAvailable(item);
+                                }}
+                                disabled={!canMarkSold}
+                                className="data-[state=checked]:bg-din-teal disabled:opacity-40 disabled:cursor-not-allowed"
                               />
                             </TableCell>
                             <TableCell>
@@ -808,6 +905,147 @@ export function MenuAdmin({ menuItems, onBack, onReload }: MenuAdminProps) {
             );
           })}
         </Tabs>
+      </div>
+
+      {/* ── Category Timing ── */}
+      <div className="px-4 pb-6">
+        <div className="flex items-center gap-2 mb-3 mt-2">
+          <Clock className="w-4 h-4 text-din-teal" />
+          <h2 className="text-sm font-bold text-din-text">Category Timings</h2>
+          {!canChangeTiming && (
+            <span className="ml-2 text-[10px] text-din-red border border-din-red/30 bg-din-red/10 rounded px-2 py-0.5">
+              View only – no permission to edit
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-din-muted mb-3">
+          Set the time window when each category is available for ordering.
+        </p>
+        <div className="rounded-lg border border-din-border overflow-hidden">
+          <div className="flex flex-wrap gap-1 p-2 border-b border-din-border bg-din-surface-alt">
+            {CATEGORIES.map((cat) => (
+              <button
+                type="button"
+                key={cat}
+                onClick={() => setTimingTab(cat)}
+                className={`text-xs px-2 py-1 rounded transition-colors ${
+                  timingTab === cat
+                    ? "bg-din-teal/20 text-din-teal border border-din-teal/40"
+                    : "text-din-muted hover:text-din-text"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+          <div className="p-4 space-y-3">
+            {(
+              categorySlots[timingTab] ?? [{ start: [9, 0], end: [23, 0] }]
+            ).map((slot, si) => (
+              <div
+                key={`${timingTab}-${slot.start[0]}-${slot.start[1]}-${slot.end[0]}-${slot.end[1]}`}
+                className="flex items-center gap-3 flex-wrap"
+              >
+                <span className="text-xs text-din-muted w-16">
+                  Slot {si + 1}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-din-muted">From</span>
+                  <input
+                    type="time"
+                    value={fmtTime(slot.start[0], slot.start[1])}
+                    disabled={!canChangeTiming}
+                    onChange={(e) => {
+                      const parsed = parseTime(e.target.value);
+                      if (!parsed || !canChangeTiming) return;
+                      const updated = { ...categorySlots };
+                      const slots = [...(updated[timingTab] ?? [])];
+                      slots[si] = { ...slots[si], start: parsed };
+                      updated[timingTab] = slots;
+                      setCategorySlots(updated);
+                      saveCategorySlots(updated);
+                    }}
+                    className="bg-din-surface border border-din-border text-din-text text-xs rounded px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-xs text-din-muted">To</span>
+                  <input
+                    type="time"
+                    value={fmtTime(slot.end[0], slot.end[1])}
+                    disabled={!canChangeTiming}
+                    onChange={(e) => {
+                      const parsed = parseTime(e.target.value);
+                      if (!parsed || !canChangeTiming) return;
+                      const updated = { ...categorySlots };
+                      const slots = [...(updated[timingTab] ?? [])];
+                      slots[si] = { ...slots[si], end: parsed };
+                      updated[timingTab] = slots;
+                      setCategorySlots(updated);
+                      saveCategorySlots(updated);
+                    }}
+                    className="bg-din-surface border border-din-border text-din-text text-xs rounded px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+                {canChangeTiming && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      const updated = { ...categorySlots };
+                      const slots = [...(updated[timingTab] ?? [])];
+                      slots.splice(si, 1);
+                      updated[timingTab] =
+                        slots.length > 0
+                          ? slots
+                          : [{ start: [9, 0], end: [23, 0] }];
+                      setCategorySlots(updated);
+                      saveCategorySlots(updated);
+                      toast.success("Time slot removed");
+                    }}
+                    className="h-6 w-6 p-0 text-din-muted hover:text-din-red"
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            {canChangeTiming && (
+              <div className="flex items-center gap-3 pt-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    const updated = { ...categorySlots };
+                    const slots = [...(updated[timingTab] ?? [])];
+                    slots.push({ start: [9, 0], end: [23, 0] });
+                    updated[timingTab] = slots;
+                    setCategorySlots(updated);
+                    saveCategorySlots(updated);
+                    toast.success("Time slot added");
+                  }}
+                  className="h-7 text-[11px] text-din-teal border border-din-teal/30 hover:bg-din-teal/10"
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Add Slot
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    const updated = { ...categorySlots };
+                    updated[timingTab] = DEFAULT_CATEGORY_SLOTS[timingTab] ?? [
+                      { start: [9, 0], end: [23, 0] },
+                    ];
+                    setCategorySlots(updated);
+                    saveCategorySlots(updated);
+                    toast.success(`${timingTab} timing reset to default`);
+                  }}
+                  className="h-7 text-[11px] text-din-muted border border-din-border hover:bg-din-surface-alt"
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" /> Reset
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
